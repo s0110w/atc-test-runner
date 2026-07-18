@@ -14,15 +14,13 @@ $ brew install s0110w/tap/atr
 
 ## Usage
 
-問題ごとにディレクトリを掘って使います。
+コンテストに参加するときは `new` で一括セットアップします。
 
 ```console
-$ mkdir abc086_a && cd abc086_a
-$ atr d abc086_a                  # サンプルを test/ に保存(フル URL でも可)
-saved: test/sample-1.in
-saved: test/sample-1.out
-...
-$ atr t -c "python3 main.py"      # テスト実行
+$ atr new abc300                  # 全問題のディレクトリ + サンプル + テンプレート
+$ cd abc300/a
+$ vim main.py
+$ atr t                           # テスト実行(コマンドは設定から)
 2 cases found
 
 sample-1
@@ -31,7 +29,9 @@ AC
 ...
 ```
 
-- `-c COMMAND` テスト対象(デフォルト `./a.out`)、`-t SECONDS` 時間制限(デフォルト 10 秒、0 で無制限)
+単発の問題は `atr d abc086_a`(フル URL でも可)で `test/` にサンプルを保存できます。
+
+- `-c COMMAND` テスト対象(デフォルトは設定の `command`、なければ `./a.out`)、`-t SECONDS` 時間制限(デフォルト 10 秒、0 で無制限)
 - テストケースは `test/sample-N.in` / `test/sample-N.out` 配置
 - 比較は末尾改行のみ許容する完全一致(手元で AC なら提出先でもサンプルは AC)
 - 全ケース AC なら exit 0(`atr t && git commit` のようなシェル連携ができます)
@@ -42,6 +42,18 @@ AC
 ```console
 $ export ATR_SESSION='<REVEL_SESSION の値>'
 ```
+
+## Config
+
+設定は任意です。`atr.toml` を作業ディレクトリの上位(同階層含む)のどこかに置くと、最も近いものが 1 つだけ使われます。
+ホームディレクトリ直下に置けば実質グローバル設定になります。
+
+```toml
+command = "python3 main.py"   # atr t のデフォルトコマンド
+template = "./template"       # atr new が各問題ディレクトリへコピーするディレクトリ(このファイルからの相対)
+```
+
+設定がなくてもすべてのコマンドは動きます(`command` は `./a.out`、テンプレートはスキップ)。
 
 ## License
 

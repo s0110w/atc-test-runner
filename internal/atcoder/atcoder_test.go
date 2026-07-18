@@ -1,6 +1,9 @@
-package main
+package atcoder
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 const taskHTML = `
 <span class="lang-ja">
@@ -19,19 +22,31 @@ const taskHTML = `
 `
 
 func TestExtractSamples(t *testing.T) {
-	got := extractSamples(taskHTML)
+	got := ExtractSamples(taskHTML)
 	want := map[string]string{
 		"sample-1.in":  "2\n1 3 1 2\n",
 		"sample-1.out": "3\n",
 		"sample-2.in":  "1 < 2 & 3\n", // entities unescaped, ja/en deduped
 	}
-	if len(got) != len(want) {
-		t.Fatalf("got %d samples, want %d: %v", len(got), len(want), got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExtractSamples = %v, want %v", got, want)
 	}
-	for name, content := range want {
-		if got[name] != content {
-			t.Errorf("%s = %q, want %q", name, got[name], content)
-		}
+}
+
+const tasksHTML = `
+<table><tbody>
+<tr><td><a href="/contests/abc300/tasks/abc300_a">A</a></td>
+    <td><a href="/contests/abc300/tasks/abc300_a">Story</a></td></tr>
+<tr><td><a href="/contests/abc300/tasks/abc300_b">B</a></td></tr>
+<tr><td><a href="/contests/other/tasks/other_a">unrelated</a></td></tr>
+</tbody></table>
+`
+
+func TestExtractTasks(t *testing.T) {
+	got := ExtractTasks(tasksHTML, "abc300")
+	want := []string{"abc300_a", "abc300_b"} // deduped, page order, other contests excluded
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExtractTasks = %v, want %v", got, want)
 	}
 }
 
@@ -40,31 +55,12 @@ func TestTaskURL(t *testing.T) {
 		"abc300_a": "https://atcoder.jp/contests/abc300/tasks/abc300_a",
 		"https://atcoder.jp/contests/abc086/tasks/abc086_a": "https://atcoder.jp/contests/abc086/tasks/abc086_a",
 	} {
-		got, err := taskURL(arg)
+		got, err := TaskURL(arg)
 		if err != nil || got != want {
-			t.Errorf("taskURL(%q) = %q, %v; want %q", arg, got, err, want)
+			t.Errorf("TaskURL(%q) = %q, %v; want %q", arg, got, err, want)
 		}
 	}
-	if _, err := taskURL("not a task"); err == nil {
-		t.Error("taskURL should reject invalid input")
-	}
-}
-
-func TestOutputsMatch(t *testing.T) {
-	cases := []struct {
-		actual, expected string
-		want             bool
-	}{
-		{"3\n", "3\n", true},
-		{"3", "3\n", true},       // missing trailing newline tolerated
-		{"3\r\n", "3\n", true},   // CRLF-insensitive
-		{"3 \n", "3\n", false},   // trailing space is not tolerated
-		{"3\n4\n", "3\n", false}, // extra line
-		{" 3\n", "3\n", false},   // leading space
-	}
-	for _, c := range cases {
-		if got := outputsMatch([]byte(c.actual), []byte(c.expected)); got != c.want {
-			t.Errorf("outputsMatch(%q, %q) = %v, want %v", c.actual, c.expected, got, c.want)
-		}
+	if _, err := TaskURL("not a task"); err == nil {
+		t.Error("TaskURL should reject invalid input")
 	}
 }

@@ -1,14 +1,13 @@
-package main
+// Package judge runs one test case against a command and judges the result.
+package judge
 
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -19,36 +18,8 @@ const (
 	maxDisplayLines = 40
 )
 
-func green(s string) string { return "\033[32m" + s + "\033[0m" }
-func red(s string) string   { return "\033[31m" + s + "\033[0m" }
-
-func cmdTest(args []string) error {
-	fs := flag.NewFlagSet("test", flag.ExitOnError)
-	command := fs.String("c", "./a.out", "command to test")
-	tle := fs.Float64("t", 10, "time limit in seconds (0: no limit)")
-	dir := fs.String("d", "test", "test case directory")
-	fs.Parse(args)
-
-	ins, err := filepath.Glob(filepath.Join(*dir, "*.in"))
-	if err != nil || len(ins) == 0 {
-		return fmt.Errorf("no test cases found in %s/", *dir)
-	}
-	sort.Strings(ins)
-	fmt.Printf("%d cases found\n", len(ins))
-
-	ac := 0
-	for _, in := range ins {
-		if runCase(*command, in, *tle) {
-			ac++
-		}
-	}
-	fmt.Println()
-	if ac == len(ins) {
-		fmt.Printf("test %s: %d cases\n", green("success"), len(ins))
-		return nil
-	}
-	return fmt.Errorf("test %s: %d AC / %d cases", red("failed"), ac, len(ins))
-}
+func Green(s string) string { return "\033[32m" + s + "\033[0m" }
+func Red(s string) string   { return "\033[31m" + s + "\033[0m" }
 
 // capWriter aborts the capture once the output exceeds maxOutputBytes,
 // which surfaces as an error from cmd.Wait (judged RE).
@@ -63,26 +34,28 @@ func (w *capWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
-func runCase(command, inPath string, tle float64) bool {
+// RunCase runs command with the .in file on stdin and prints the verdict.
+// It returns true only for AC.
+func RunCase(command, inPath string, tleSeconds float64) bool {
 	fmt.Printf("\n%s\n", strings.TrimSuffix(filepath.Base(inPath), ".in"))
 
 	expected, err := os.ReadFile(strings.TrimSuffix(inPath, ".in") + ".out")
 	if err != nil {
 		// an unjudged case must not count as success: exit code 0 means "all cases AC"
-		fmt.Println(red("no expected output file; cannot judge"))
+		fmt.Println(Red("no expected output file; cannot judge"))
 		return false
 	}
 	inFile, err := os.Open(inPath)
 	if err != nil {
-		fmt.Println(red("error:"), err)
+		fmt.Println(Red("error:"), err)
 		return false
 	}
 	defer inFile.Close()
 
 	ctx := context.Background()
-	if tle > 0 {
+	if tleSeconds > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(tle*float64(time.Second)))
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(tleSeconds*float64(time.Second)))
 		defer cancel()
 	}
 
@@ -106,21 +79,21 @@ func runCase(command, inPath string, tle float64) bool {
 	// "the deadline has passed by now": a run finishing just under the
 	// limit must not turn into TLE while we judge it
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
-		fmt.Println(red("TLE"))
+		fmt.Println(Red("TLE"))
 		return false
 	}
 	if err != nil {
 		// nonzero exit is RE even if the output matches: a crash that
 		// happens to print the right answer must not pass (soundness)
-		fmt.Printf("%s: %v\n", red("RE"), err)
+		fmt.Printf("%s: %v\n", Red("RE"), err)
 		return false
 	}
 
 	if outputsMatch(stdout.buf.Bytes(), expected) {
-		fmt.Println(green("AC"))
+		fmt.Println(Green("AC"))
 		return true
 	}
-	fmt.Println(red("WA"))
+	fmt.Println(Red("WA"))
 	input, _ := os.ReadFile(inPath)
 	printSection("input", input)
 	printSection("output", stdout.buf.Bytes())
