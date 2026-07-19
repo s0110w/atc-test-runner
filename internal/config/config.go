@@ -9,8 +9,10 @@ import (
 )
 
 type Config struct {
-	Command  string // default command for `atr test -c`
-	Template string // absolute path of the template dir, "" if unset
+	Command         string // default command for `atr test -c`
+	ContestTemplate string // absolute path of the dir expanded into the contest dir, "" if unset
+	TaskTemplate    string // absolute path of the dir expanded into each task dir, "" if unset
+	Select          bool   // open the task selection TUI by default in `atr new`
 }
 
 func Default() Config { return Config{Command: "./a.out"} }
@@ -40,12 +42,18 @@ func Find(dir string) (Config, error) {
 	}
 }
 
-// parse reads a minimal TOML subset: `key = "string"` lines and
-// # comments. Anything outside the subset is an error, never a silent
-// misread of valid TOML.
-// ponytail: flat string keys only; adopt a TOML library if structure is ever needed
+// parse reads a minimal TOML subset: `key = "string"` / `key = true|false`
+// lines and # comments. Anything outside the subset is an error, never a
+// silent misread of valid TOML.
+// ponytail: flat keys only; adopt a TOML library if structure is ever needed
 func parse(text, dir string) (Config, error) {
 	cfg := Default()
+	abs := func(p string) string {
+		if filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(dir, p) // relative to the config file's directory
+	}
 	for i, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -53,44 +61,69 @@ func parse(text, dir string) (Config, error) {
 		}
 		key, rest, ok := strings.Cut(line, "=")
 		if !ok {
-			return cfg, fmt.Errorf(`atr.toml:%d: only 'key = "string"' lines and # comments are supported`, i+1)
+			return cfg, fmt.Errorf(`atr.toml:%d: only 'key = "string"' or 'key = true/false' lines and # comments are supported`, i+1)
 		}
-		val, err := parseTOMLString(strings.TrimSpace(rest))
+		strVal, boolVal, isBool, err := parseValue(strings.TrimSpace(rest))
 		if err != nil {
 			return cfg, fmt.Errorf("atr.toml:%d: %v", i+1, err)
 		}
-		switch strings.TrimSpace(key) {
-		case "command":
-			cfg.Command = val
-		case "template":
-			if !filepath.IsAbs(val) {
-				val = filepath.Join(dir, val) // relative to the config file's directory
+		key = strings.TrimSpace(key)
+		wantBool := key == "select"
+		if wantBool != isBool {
+			want := "a double-quoted string"
+			if wantBool {
+				want = "true or false"
 			}
-			cfg.Template = val
+			return cfg, fmt.Errorf("atr.toml:%d: %s must be %s", i+1, key, want)
+		}
+		switch key {
+		case "command":
+			cfg.Command = strVal
+		case "contest_template":
+			cfg.ContestTemplate = abs(strVal)
+		case "task_template":
+			cfg.TaskTemplate = abs(strVal)
+		case "select":
+			cfg.Select = boolVal
 		default:
-			return cfg, fmt.Errorf("atr.toml:%d: unknown key %q", i+1, strings.TrimSpace(key))
+			return cfg, fmt.Errorf("atr.toml:%d: unknown key %q", i+1, key)
 		}
 	}
 	return cfg, nil
 }
 
-// parseTOMLString accepts a basic double-quoted string without escapes,
-// optionally followed by a # comment.
-func parseTOMLString(s string) (string, error) {
+// parseValue accepts a basic double-quoted string without escapes or a
+// bare true/false, optionally followed by a # comment.
+func parseValue(s string) (strVal string, boolVal, isBool bool, err error) {
+	if token, rest, ok := cutToken(s); ok && (token == "true" || token == "false") {
+		if rest != "" && !strings.HasPrefix(rest, "#") {
+			return "", false, false, fmt.Errorf("unexpected content after value: %q", rest)
+		}
+		return "", token == "true", true, nil
+	}
 	if len(s) < 2 || s[0] != '"' {
-		return "", fmt.Errorf("value must be a double-quoted string")
+		return "", false, false, fmt.Errorf("value must be a double-quoted string or true/false")
 	}
 	end := strings.IndexByte(s[1:], '"')
 	if end < 0 {
-		return "", fmt.Errorf("unclosed string")
+		return "", false, false, fmt.Errorf("unclosed string")
 	}
 	val := s[1 : end+1]
 	if strings.ContainsRune(val, '\\') {
-		return "", fmt.Errorf("escape sequences are not supported")
+		return "", false, false, fmt.Errorf("escape sequences are not supported")
 	}
 	rest := strings.TrimSpace(s[end+2:])
 	if rest != "" && !strings.HasPrefix(rest, "#") {
-		return "", fmt.Errorf("unexpected content after string: %q", rest)
+		return "", false, false, fmt.Errorf("unexpected content after string: %q", rest)
 	}
-	return val, nil
+	return val, false, false, nil
+}
+
+// cutToken splits off the first whitespace-delimited token.
+func cutToken(s string) (token, rest string, ok bool) {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return "", "", false
+	}
+	return fields[0], strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), fields[0])), true
 }

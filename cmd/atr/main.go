@@ -8,13 +8,13 @@ import (
 	"atr/internal/atcoder"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 // errUsage marks errors caused by wrong invocation (exit 2, not 1).
 var errUsage = errors.New("usage error")
 
 const usage = `Usage:
-  atr new|n <contest ID (e.g. abc300)>            set up all tasks of a contest
+  atr new|n [-s] <contest ID (e.g. abc300)>       set up a contest (-s: select tasks)
   atr download|d <URL or problem ID (e.g. abc300_a)>
   atr test|t [options]   run tests (see: atr test -h)
 `

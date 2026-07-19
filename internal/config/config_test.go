@@ -10,7 +10,9 @@ func TestParse(t *testing.T) {
 	cfg, err := parse(`
 # comment
 command = "python3 main.py"   # trailing comment
-template = "./tpl"
+contest_template = "./ctpl"
+task_template = "./ttpl"
+select = true   # bool value
 `, "/base")
 	if err != nil {
 		t.Fatal(err)
@@ -18,8 +20,14 @@ template = "./tpl"
 	if cfg.Command != "python3 main.py" {
 		t.Errorf("Command = %q", cfg.Command)
 	}
-	if cfg.Template != filepath.Join("/base", "tpl") {
-		t.Errorf("Template = %q", cfg.Template)
+	if cfg.ContestTemplate != filepath.Join("/base", "ctpl") {
+		t.Errorf("ContestTemplate = %q", cfg.ContestTemplate)
+	}
+	if cfg.TaskTemplate != filepath.Join("/base", "ttpl") {
+		t.Errorf("TaskTemplate = %q", cfg.TaskTemplate)
+	}
+	if !cfg.Select {
+		t.Error("Select should be true")
 	}
 
 	// outside the subset -> error, never a silent misread
@@ -28,8 +36,12 @@ template = "./tpl"
 		"[section]",
 		`arr = ["a", "b"]`,
 		`typo_key = "x"`,
+		`template = "./tpl"`, // removed key (split into contest_template / task_template)
 		`command = "a" trailing`,
 		`command = "back\slash"`,
+		`select = "true"`, // must be a bare bool
+		`command = true`,  // must be a string
+		`select = true extra`,
 	} {
 		if _, err := parse(bad, "/base"); err == nil {
 			t.Errorf("parse(%q) should fail", bad)
@@ -63,7 +75,7 @@ func TestFindNearest(t *testing.T) {
 
 func TestFindAbsent(t *testing.T) {
 	cfg, err := Find(t.TempDir())
-	if err != nil || cfg.Command != "./a.out" || cfg.Template != "" {
+	if err != nil || cfg.Command != "./a.out" || cfg.ContestTemplate != "" || cfg.TaskTemplate != "" || cfg.Select {
 		t.Fatalf("fallback config: got %+v, %v", cfg, err)
 	}
 }

@@ -45,10 +45,22 @@ func TaskURL(arg string) (string, error) {
 	return "", fmt.Errorf("expected a task URL or problem ID like abc300_a, got %q", arg)
 }
 
+// fetchInterval throttles requests: atr new hits the contest page plus one
+// page per task in a tight loop, which AtCoder answers with 429.
+// ponytail: fixed interval, no adaptive backoff on 429
+const fetchInterval = 1500 * time.Millisecond
+
+var lastFetch time.Time
+
 // FetchPage GETs a page with a 30s timeout and no retry. The ATR_SESSION
 // environment variable, if set, is sent as the REVEL_SESSION cookie so
 // that pages of a running contest are reachable.
 func FetchPage(url string) (string, error) {
+	if wait := fetchInterval - time.Since(lastFetch); wait > 0 {
+		time.Sleep(wait)
+	}
+	lastFetch = time.Now()
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

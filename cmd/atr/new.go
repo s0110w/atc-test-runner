@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"atr/internal/atcoder"
 	"atr/internal/config"
+	"atr/internal/tui"
 )
 
 // taskDirName is the task ID's suffix ("abc300_a" -> "a") for fast cd;
@@ -25,14 +27,18 @@ func taskDirName(task string, used map[string]bool) string {
 }
 
 func cmdNew(args []string) error {
-	if len(args) != 1 || !atcoder.IsContestID(args[0]) {
-		return fmt.Errorf("%w: atr new <contest ID (e.g. abc300)>", errUsage)
+	fs := flag.NewFlagSet("new", flag.ExitOnError)
+	sel := fs.Bool("s", false, "select tasks interactively before setup")
+	fs.Parse(args)
+	if fs.NArg() != 1 || !atcoder.IsContestID(fs.Arg(0)) {
+		return fmt.Errorf("%w: atr new [-s] <contest ID (e.g. abc300)>", errUsage)
 	}
-	contest := args[0]
+	contest := fs.Arg(0)
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
+
 	body, err := atcoder.FetchPage(atcoder.ContestTasksURL(contest))
 	if err != nil {
 		return err
@@ -42,19 +48,56 @@ func cmdNew(args []string) error {
 		return fmt.Errorf("no tasks found for %s (during a contest, set ATR_SESSION to your REVEL_SESSION cookie)", contest)
 	}
 
+	// dir names are computed over all tasks first so that collision
+	// handling does not depend on what gets selected
 	used := map[string]bool{}
-	for _, task := range tasks {
-		dir := filepath.Join(contest, taskDirName(task, used))
+	dirNames := make([]string, len(tasks))
+	for i, task := range tasks {
+		dirNames[i] = taskDirName(task, used)
+	}
+
+	picked := make([]int, len(tasks))
+	for i := range picked {
+		picked[i] = i
+	}
+	if *sel || cfg.Select {
+		picked, err = tui.SelectTasks(contest, dirNames)
+		if err != nil {
+			return err
+		}
+		if len(picked) == 0 {
+			fmt.Println("nothing selected")
+			return nil
+		}
+	}
+
+	// the contest template is expanded once, only when the contest dir
+	// is created by this run
+	if _, err := os.Stat(contest); os.IsNotExist(err) {
+		if err := os.MkdirAll(contest, 0o755); err != nil {
+			return err
+		}
+		if cfg.ContestTemplate != "" {
+			if err := os.CopyFS(contest, os.DirFS(cfg.ContestTemplate)); err != nil {
+				return fmt.Errorf("copy contest template: %v", err)
+			}
+		}
+	} else if cfg.ContestTemplate != "" {
+		fmt.Printf("skip contest template: %s/ already exists\n", contest)
+	}
+
+	for _, i := range picked {
+		dir := filepath.Join(contest, dirNames[i])
 		if _, err := os.Stat(dir); err == nil {
 			fmt.Printf("skip: %s (already exists)\n", dir)
 			continue
 		}
-		if err := downloadTask(atcoder.TaskPageURL(contest, task), filepath.Join(dir, "test")); err != nil {
+		if err := downloadTask(atcoder.TaskPageURL(contest, tasks[i]), filepath.Join(dir, "test")); err != nil {
 			return err
 		}
-		if cfg.Template != "" {
-			if err := os.CopyFS(dir, os.DirFS(cfg.Template)); err != nil {
-				return fmt.Errorf("copy template: %v", err)
+		if cfg.TaskTemplate != "" {
+			if err := os.CopyFS(dir, os.DirFS(cfg.TaskTemplate)); err != nil {
+				return fmt.Errorf("copy task template: %v", err)
 			}
 		}
 	}
