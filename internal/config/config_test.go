@@ -10,6 +10,7 @@ func TestParse(t *testing.T) {
 	cfg, err := parse(`
 # comment
 command = "python3 main.py"   # trailing comment
+build = 'cabal build {task}'  # literal string (single quotes)
 contest_template = "./ctpl"
 task_template = "./ttpl"
 select = true   # bool value
@@ -19,6 +20,9 @@ select = true   # bool value
 	}
 	if cfg.Command != "python3 main.py" {
 		t.Errorf("Command = %q", cfg.Command)
+	}
+	if cfg.Build != "cabal build {task}" {
+		t.Errorf("Build = %q", cfg.Build)
 	}
 	if cfg.ContestTemplate != filepath.Join("/base", "ctpl") {
 		t.Errorf("ContestTemplate = %q", cfg.ContestTemplate)
@@ -30,8 +34,24 @@ select = true   # bool value
 		t.Error("Select should be true")
 	}
 
+	// standard TOML string forms: basic-string escapes and literal strings
+	for src, want := range map[string]string{
+		`command = "say \"hi\""`:        `say "hi"`,
+		`command = "tab\there"`:         "tab\there",
+		`command = "back\\slash"`:       `back\slash`,
+		`command = 'no \n escapes # x'`: `no \n escapes # x`,
+	} {
+		cfg, err := parse(src, "/base")
+		if err != nil || cfg.Command != want {
+			t.Errorf("parse(%q): Command = %q, err = %v; want %q", src, cfg.Command, err, want)
+		}
+	}
+
 	// outside the subset -> error, never a silent misread
 	for _, bad := range []string{
+		`command = 'unclosed`,
+		`command = "bad \x escape"`,
+		`command = 'a' trailing`,
 		"command = unquoted",
 		"[section]",
 		`arr = ["a", "b"]`,

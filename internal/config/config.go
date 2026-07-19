@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Command         string // default command for `atr test -c`
+	Build           string // default build command for `atr test -b`, run once before the cases, "" if unset
 	ContestTemplate string // absolute path of the dir expanded into the contest dir, "" if unset
 	TaskTemplate    string // absolute path of the dir expanded into each task dir, "" if unset
 	Select          bool   // open the task selection TUI by default in `atr new`
@@ -79,6 +80,8 @@ func parse(text, dir string) (Config, error) {
 		switch key {
 		case "command":
 			cfg.Command = strVal
+		case "build":
+			cfg.Build = strVal
 		case "contest_template":
 			cfg.ContestTemplate = abs(strVal)
 		case "task_template":
@@ -92,8 +95,9 @@ func parse(text, dir string) (Config, error) {
 	return cfg, nil
 }
 
-// parseValue accepts a basic double-quoted string without escapes or a
-// bare true/false, optionally followed by a # comment.
+// parseValue accepts a double-quoted string (with \" \\ \n \t escapes), a
+// single-quoted literal string (no escapes) or a bare true/false, optionally
+// followed by a # comment. Both string forms follow standard TOML semantics.
 func parseValue(s string) (strVal string, boolVal, isBool bool, err error) {
 	if token, rest, ok := cutToken(s); ok && (token == "true" || token == "false") {
 		if rest != "" && !strings.HasPrefix(rest, "#") {
@@ -101,22 +105,58 @@ func parseValue(s string) (strVal string, boolVal, isBool bool, err error) {
 		}
 		return "", token == "true", true, nil
 	}
-	if len(s) < 2 || s[0] != '"' {
-		return "", false, false, fmt.Errorf("value must be a double-quoted string or true/false")
+	if len(s) < 2 || (s[0] != '"' && s[0] != '\'') {
+		return "", false, false, fmt.Errorf("value must be a quoted string or true/false")
 	}
-	end := strings.IndexByte(s[1:], '"')
-	if end < 0 {
-		return "", false, false, fmt.Errorf("unclosed string")
+	val, rest, err := cutString(s)
+	if err != nil {
+		return "", false, false, err
 	}
-	val := s[1 : end+1]
-	if strings.ContainsRune(val, '\\') {
-		return "", false, false, fmt.Errorf("escape sequences are not supported")
-	}
-	rest := strings.TrimSpace(s[end+2:])
+	rest = strings.TrimSpace(rest)
 	if rest != "" && !strings.HasPrefix(rest, "#") {
 		return "", false, false, fmt.Errorf("unexpected content after string: %q", rest)
 	}
 	return val, false, false, nil
+}
+
+// cutString consumes the leading quoted string and returns the remainder.
+// Double quotes are TOML basic strings (escapes processed), single quotes
+// are TOML literal strings (no escapes).
+func cutString(s string) (val, rest string, err error) {
+	if s[0] == '\'' {
+		end := strings.IndexByte(s[1:], '\'')
+		if end < 0 {
+			return "", "", fmt.Errorf("unclosed string")
+		}
+		return s[1 : end+1], s[end+2:], nil
+	}
+	var b strings.Builder
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '"':
+			return b.String(), s[i+1:], nil
+		case '\\':
+			i++
+			if i >= len(s) {
+				return "", "", fmt.Errorf("unclosed string")
+			}
+			switch s[i] {
+			case '"':
+				b.WriteByte('"')
+			case '\\':
+				b.WriteByte('\\')
+			case 'n':
+				b.WriteByte('\n')
+			case 't':
+				b.WriteByte('\t')
+			default:
+				return "", "", fmt.Errorf(`unsupported escape \%c`, s[i])
+			}
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return "", "", fmt.Errorf("unclosed string")
 }
 
 // cutToken splits off the first whitespace-delimited token.

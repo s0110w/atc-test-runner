@@ -103,6 +103,9 @@ func RunCase(command, inPath string, tleSeconds float64) bool {
 		// nonzero exit is RE even if the output matches: a crash that
 		// happens to print the right answer must not pass (soundness)
 		fmt.Printf("%s: %v\n", Red("RE"), err)
+		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 127 {
+			fmt.Println("(exit status 127 usually means the run command was not found — check -c or \"command\" in atr.toml)")
+		}
 		return false
 	}
 
