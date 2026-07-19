@@ -8,7 +8,9 @@ import (
 	"atr/internal/atcoder"
 )
 
-const version = "0.3.1"
+// version is injected at release time via -ldflags "-X main.version=..."
+// (the Homebrew formula passes its own version); source builds show "dev".
+var version = "dev"
 
 // errUsage marks errors caused by wrong invocation (exit 2, not 1).
 var errUsage = errors.New("usage error")
@@ -17,6 +19,7 @@ const usage = `Usage:
   atr new|n [-s] <contest ID (e.g. abc300)>       set up a contest (-s: select tasks)
   atr download|d <URL or problem ID (e.g. abc300_a)>
   atr test|t [options]   run tests (see: atr test -h)
+  atr --version|-V       print version
 `
 
 func main() {
@@ -27,6 +30,9 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "--version", "-V":
+		fmt.Println("atr " + version)
+		return
 	case "new", "n":
 		err = cmdNew(os.Args[2:])
 	case "download", "d":

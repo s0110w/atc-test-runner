@@ -63,7 +63,7 @@ $ atr d abc086_a        # 問題 ID。フル URL でも可
 | `atr download` | `atr d` | 問題 ID(例 `abc086_a`)または URL | サンプルを `test/` に保存 |
 | `atr test` | `atr t` | (下記オプション) | `test/` のサンプルでテスト実行 |
 
-引数なしで `atr` を実行するとコマンド一覧が、`atr test -h` で `test` のオプションが出ます。
+引数なしで `atr` を実行するとコマンド一覧が、`atr test -h` で `test` のオプションが、`atr --version`(`-V`)でバージョンが出ます。
 
 `atr new` のオプション:
 
