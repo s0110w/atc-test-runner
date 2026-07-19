@@ -99,6 +99,7 @@ func ExtractSamples(body string) map[string]string {
 			continue // the English section duplicates the Japanese one
 		}
 		s := html.UnescapeString(m[3])
+		s = strings.ReplaceAll(s, "\r\n", "\n") // real pages serve CRLF inside <pre>
 		s = strings.TrimPrefix(s, "\n")
 		s = strings.TrimRight(s, "\n") + "\n"
 		samples[name] = s

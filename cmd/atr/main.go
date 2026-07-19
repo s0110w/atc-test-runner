@@ -8,7 +8,7 @@ import (
 	"atr/internal/atcoder"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 // errUsage marks errors caused by wrong invocation (exit 2, not 1).
 var errUsage = errors.New("usage error")

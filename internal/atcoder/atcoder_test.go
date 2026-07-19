@@ -1,6 +1,7 @@
 package atcoder
 
 import (
+	"os"
 	"reflect"
 	"testing"
 )
@@ -47,6 +48,38 @@ func TestExtractTasks(t *testing.T) {
 	want := []string{"abc300_a", "abc300_b"} // deduped, page order, other contests excluded
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ExtractTasks = %v, want %v", got, want)
+	}
+}
+
+// The testdata pages are real atcoder.jp pages, so these tests detect
+// markup changes that would break the parsers.
+
+func TestExtractSamplesRealPage(t *testing.T) {
+	b, err := os.ReadFile("testdata/abc086_a.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ExtractSamples(string(b))
+	want := map[string]string{
+		"sample-1.in":  "3 4\n",
+		"sample-1.out": "Even\n",
+		"sample-2.in":  "1 21\n",
+		"sample-2.out": "Odd\n",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExtractSamples(real page) = %v, want %v", got, want)
+	}
+}
+
+func TestExtractTasksRealPage(t *testing.T) {
+	b, err := os.ReadFile("testdata/abc086_tasks.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ExtractTasks(string(b), "abc086")
+	want := []string{"abc086_a", "abc086_b", "arc089_a", "arc089_b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExtractTasks(real page) = %v, want %v", got, want)
 	}
 }
 

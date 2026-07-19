@@ -33,6 +33,61 @@ func makeRaw(fd uintptr) (syscall.Termios, error) {
 	return old, nil
 }
 
+// selector is the pure selection state, separated from terminal I/O so
+// the key handling is unit-testable.
+type selector struct {
+	cursor   int
+	selected []bool
+}
+
+func newSelector(n int) *selector {
+	s := &selector{selected: make([]bool, n)}
+	for i := range s.selected {
+		s.selected[i] = true // plain enter keeps the default (all tasks)
+	}
+	return s
+}
+
+// handle applies one key and reports whether the selection is finished
+// (enter) or canceled (q / Ctrl-C).
+func (s *selector) handle(key byte) (done, canceled bool) {
+	switch key {
+	case 'k':
+		if s.cursor > 0 {
+			s.cursor--
+		}
+	case 'j':
+		if s.cursor < len(s.selected)-1 {
+			s.cursor++
+		}
+	case ' ':
+		s.selected[s.cursor] = !s.selected[s.cursor]
+	case 'a':
+		all := true
+		for _, sel := range s.selected {
+			all = all && sel
+		}
+		for i := range s.selected {
+			s.selected[i] = !all
+		}
+	case '\r', '\n':
+		return true, false
+	case 'q', 3: // q or Ctrl-C
+		return true, true
+	}
+	return false, false
+}
+
+func (s *selector) picked() []int {
+	var picked []int
+	for i, sel := range s.selected {
+		if sel {
+			picked = append(picked, i)
+		}
+	}
+	return picked
+}
+
 // SelectTasks shows a checkbox list and returns the chosen indices.
 // All items start selected, so plain enter keeps the default behavior.
 // It returns an error if the user cancels (q / Ctrl-C) or stdin is not a
@@ -45,15 +100,10 @@ func SelectTasks(title string, items []string) ([]int, error) {
 	}
 	defer ioctl(fd, ioctlSet, &old)
 
-	selected := make([]bool, len(items))
-	for i := range selected {
-		selected[i] = true
-	}
-	cursor := 0
-
 	fmt.Print("\033[?25l")       // hide cursor
 	defer fmt.Print("\033[?25h") // show cursor
 
+	s := newSelector(len(items))
 	fmt.Printf("%s  (↑↓/jk: move, space: toggle, a: all, enter: ok, q: cancel)\n", title)
 	draw := func(redraw bool) {
 		if redraw {
@@ -61,10 +111,10 @@ func SelectTasks(title string, items []string) ([]int, error) {
 		}
 		for i, item := range items {
 			mark, ptr := " ", " "
-			if selected[i] {
+			if s.selected[i] {
 				mark = "x"
 			}
-			if i == cursor {
+			if i == s.cursor {
 				ptr = ">"
 			}
 			fmt.Printf("\r%s [%s] %s\033[K\n", ptr, mark, item)
@@ -87,38 +137,12 @@ func SelectTasks(title string, items []string) ([]int, error) {
 				key = 'j'
 			}
 		}
-		switch key {
-		case 'k':
-			if cursor > 0 {
-				cursor--
-			}
-		case 'j':
-			if cursor < len(items)-1 {
-				cursor++
-			}
-		case ' ':
-			selected[cursor] = !selected[cursor]
-		case 'a':
-			all := true
-			for _, s := range selected {
-				if !s {
-					all = false
-					break
-				}
-			}
-			for i := range selected {
-				selected[i] = !all
-			}
-		case '\r', '\n':
-			var picked []int
-			for i, s := range selected {
-				if s {
-					picked = append(picked, i)
-				}
-			}
-			return picked, nil
-		case 'q', 3: // q or Ctrl-C
+		done, canceled := s.handle(key)
+		if canceled {
 			return nil, fmt.Errorf("canceled")
+		}
+		if done {
+			return s.picked(), nil
 		}
 		draw(true)
 	}

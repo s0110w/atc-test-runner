@@ -13,23 +13,34 @@ import (
 	"time"
 )
 
-const (
-	maxOutputBytes  = 64 << 20 // captured stdout beyond this is RE: buggy solutions can print unbounded output
-	maxDisplayLines = 40
-)
+// maxOutputBytes is a variable so tests can lower it.
+var maxOutputBytes = 64 << 20 // captured stdout beyond this is RE: buggy solutions can print unbounded output
+
+const maxDisplayLines = 40
 
 func Green(s string) string { return "\033[32m" + s + "\033[0m" }
 func Red(s string) string   { return "\033[31m" + s + "\033[0m" }
 
-// capWriter aborts the capture once the output exceeds maxOutputBytes,
-// which surfaces as an error from cmd.Wait (judged RE).
+// capWriter aborts the capture once the output exceeds the limit and
+// fires onOver. Killing the process there is essential: merely stopping
+// the capture leaves the child blocked on a full pipe, and Wait would
+// then hang until the deadline (or forever with no time limit).
 type capWriter struct {
-	buf bytes.Buffer
+	buf    bytes.Buffer
+	limit  int
+	onOver func()
+	over   bool
 }
 
 func (w *capWriter) Write(p []byte) (int, error) {
-	if w.buf.Len()+len(p) > maxOutputBytes {
-		return 0, fmt.Errorf("output exceeds %d bytes", maxOutputBytes)
+	if w.buf.Len()+len(p) > w.limit {
+		if !w.over {
+			w.over = true
+			if w.onOver != nil {
+				w.onOver()
+			}
+		}
+		return 0, fmt.Errorf("output exceeds %d bytes", w.limit)
 	}
 	return w.buf.Write(p)
 }
@@ -62,19 +73,25 @@ func RunCase(command, inPath string, tleSeconds float64) bool {
 	// ponytail: sh -c, no Windows support (a design non-goal)
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Stdin = inFile
-	var stdout capWriter
-	cmd.Stdout = &stdout
+	stdout := &capWriter{limit: maxOutputBytes}
+	cmd.Stdout = stdout
 	cmd.Stderr = os.Stderr
 	// kill the whole process group on timeout: killing only sh leaves
 	// pipeline children holding stdout, and Wait would block forever
+	killGroup := func() { syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.Cancel = func() error { killGroup(); return nil }
 	cmd.WaitDelay = time.Second
+	stdout.onOver = killGroup
 
 	start := time.Now()
 	err = cmd.Run()
 	fmt.Printf("time: %.6f sec\n", time.Since(start).Seconds())
 
+	if stdout.over {
+		fmt.Printf("%s: output limit exceeded (%d bytes)\n", Red("RE"), stdout.limit)
+		return false
+	}
 	// TLE means "the process was killed for exceeding the limit", not
 	// "the deadline has passed by now": a run finishing just under the
 	// limit must not turn into TLE while we judge it
