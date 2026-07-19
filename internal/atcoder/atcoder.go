@@ -20,7 +20,7 @@ var (
 	sampleRe    = regexp.MustCompile(`(?s)<h3[^>]*>\s*(入力例|出力例|Sample Input|Sample Output)\s*(\d+)\s*</h3>\s*(?:<div[^>]*>\s*)?<pre[^>]*>(.*?)</pre>`)
 	problemIDRe = regexp.MustCompile(`^([a-z0-9]+)_[a-z0-9]+$`)
 	contestIDRe = regexp.MustCompile(`^[a-z0-9_-]+$`)
-	taskLinkRe  = regexp.MustCompile(`href="/contests/([a-z0-9_-]+)/tasks/([a-z0-9_-]+)"`)
+	taskLinkRe  = regexp.MustCompile(`href="/contests/([a-z0-9_-]+)/tasks/([a-z0-9_-]+)"[^>]*>([^<]*)</a>`)
 )
 
 func IsContestID(s string) bool { return contestIDRe.MatchString(s) }
@@ -31,6 +31,14 @@ func ContestTasksURL(contest string) string {
 
 func TaskPageURL(contest, task string) string {
 	return fmt.Sprintf("https://atcoder.jp/contests/%s/tasks/%s", contest, task)
+}
+
+func ContestURL(contest string) string {
+	return "https://atcoder.jp/contests/" + contest
+}
+
+func SubmitURL(contest, task string) string {
+	return fmt.Sprintf("https://atcoder.jp/contests/%s/submit?taskScreenName=%s", contest, task)
 }
 
 // TaskURL accepts a full task URL or a problem ID like "abc300_a"
@@ -107,17 +115,33 @@ func ExtractSamples(body string) map[string]string {
 	return samples
 }
 
-// ExtractTasks returns the contest's task IDs in page order, deduped
-// (each task is linked more than once on the tasks page).
-func ExtractTasks(body, contest string) []string {
-	seen := map[string]bool{}
-	var tasks []string
+// Task is one row of the contest tasks page.
+type Task struct {
+	ID    string // e.g. "abc300_a"
+	Label string // assignment label on the page, e.g. "A"
+	Title string // e.g. "N-choice question"
+}
+
+// ExtractTasks returns the contest's tasks in page order, deduped.
+// Each task is linked twice on the tasks page: the first link's text is
+// the assignment label, the second's is the title.
+func ExtractTasks(body, contest string) []Task {
+	index := map[string]int{}
+	var tasks []Task
 	for _, m := range taskLinkRe.FindAllStringSubmatch(body, -1) {
-		if m[1] != contest || seen[m[2]] {
+		if m[1] != contest {
 			continue
 		}
-		seen[m[2]] = true
-		tasks = append(tasks, m[2])
+		text := strings.TrimSpace(html.UnescapeString(m[3]))
+		i, ok := index[m[2]]
+		if !ok {
+			index[m[2]] = len(tasks)
+			tasks = append(tasks, Task{ID: m[2], Label: text})
+			continue
+		}
+		if tasks[i].Title == "" {
+			tasks[i].Title = text
+		}
 	}
 	return tasks
 }

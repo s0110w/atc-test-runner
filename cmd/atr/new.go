@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,42 @@ import (
 	"atr/internal/config"
 	"atr/internal/tui"
 )
+
+// contest.json gives tools and humans the per-task metadata needed to
+// work a contest: titles, task page URLs and submit URLs.
+type taskMeta struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Title     string `json:"title"`
+	Dir       string `json:"dir"`
+	URL       string `json:"url"`
+	SubmitURL string `json:"submit_url"`
+}
+
+type contestMeta struct {
+	Contest string     `json:"contest"`
+	URL     string     `json:"url"`
+	Tasks   []taskMeta `json:"tasks"`
+}
+
+func writeContestJSON(contest string, tasks []atcoder.Task, dirNames []string) error {
+	meta := contestMeta{Contest: contest, URL: atcoder.ContestURL(contest)}
+	for i, t := range tasks {
+		meta.Tasks = append(meta.Tasks, taskMeta{
+			ID:        t.ID,
+			Label:     t.Label,
+			Title:     t.Title,
+			Dir:       dirNames[i],
+			URL:       atcoder.TaskPageURL(contest, t.ID),
+			SubmitURL: atcoder.SubmitURL(contest, t.ID),
+		})
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(contest, "contest.json"), append(data, '\n'), 0o644)
+}
 
 // taskDirName is the task ID's suffix ("abc300_a" -> "a") for fast cd;
 // the full ID is recoverable as parentDir + "_" + name.
@@ -53,7 +90,7 @@ func cmdNew(args []string) error {
 	used := map[string]bool{}
 	dirNames := make([]string, len(tasks))
 	for i, task := range tasks {
-		dirNames[i] = taskDirName(task, used)
+		dirNames[i] = taskDirName(task.ID, used)
 	}
 
 	picked := make([]int, len(tasks))
@@ -86,13 +123,20 @@ func cmdNew(args []string) error {
 		fmt.Printf("skip contest template: %s/ already exists\n", contest)
 	}
 
+	// contest.json always covers every task and is regenerated on each
+	// run: it is derived metadata, not user data, so overwriting is safe
+	if err := writeContestJSON(contest, tasks, dirNames); err != nil {
+		return err
+	}
+	fmt.Printf("saved: %s\n", filepath.Join(contest, "contest.json"))
+
 	for _, i := range picked {
 		dir := filepath.Join(contest, dirNames[i])
 		if _, err := os.Stat(dir); err == nil {
 			fmt.Printf("skip: %s (already exists)\n", dir)
 			continue
 		}
-		if err := downloadTask(atcoder.TaskPageURL(contest, tasks[i]), filepath.Join(dir, "test")); err != nil {
+		if err := downloadTask(atcoder.TaskPageURL(contest, tasks[i].ID), filepath.Join(dir, "test")); err != nil {
 			return err
 		}
 		if cfg.TaskTemplate != "" {

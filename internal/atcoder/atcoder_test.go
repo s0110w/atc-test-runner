@@ -45,7 +45,12 @@ const tasksHTML = `
 
 func TestExtractTasks(t *testing.T) {
 	got := ExtractTasks(tasksHTML, "abc300")
-	want := []string{"abc300_a", "abc300_b"} // deduped, page order, other contests excluded
+	// deduped, page order, other contests excluded;
+	// first link text = label, second = title (missing title stays empty)
+	want := []Task{
+		{ID: "abc300_a", Label: "A", Title: "Story"},
+		{ID: "abc300_b", Label: "B"},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ExtractTasks = %v, want %v", got, want)
 	}
@@ -77,7 +82,12 @@ func TestExtractTasksRealPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := ExtractTasks(string(b), "abc086")
-	want := []string{"abc086_a", "abc086_b", "arc089_a", "arc089_b"}
+	want := []Task{
+		{ID: "abc086_a", Label: "A", Title: "Product"},
+		{ID: "abc086_b", Label: "B", Title: "1 21"},
+		{ID: "arc089_a", Label: "C", Title: "Traveling"},
+		{ID: "arc089_b", Label: "D", Title: "Checker"},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ExtractTasks(real page) = %v, want %v", got, want)
 	}
